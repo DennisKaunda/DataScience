@@ -1,0 +1,198 @@
+# Problem Statement
+### Here, we will process 3,168 recorded voice samples, collected from male and female speakers.
+### The voice samples are pre-processed by acoustic analysis in R using the seewave and tuneR packages, with an analyzed frequency range of 0hz-280hz.
+### Using this data, we will train our model to recognize the label of speech as Male or Female using SVM.
+
+# The Dataset
+## The following acoustic properties of each voice are measured and included within the CSV:
+
+### meanfreq: mean frequency (in kHz)
+### sd: standard deviation of frequency
+### median: median frequency (in kHz)
+### Q25: first quantile (in kHz)
+### Q75: third quantile (in kHz)
+### IQR: interquantile range (in kHz)
+### skew: skewness (see note in specprop description)
+### kurt: kurtosis (see note in specprop description)
+### sp.ent: spectral entropy
+### sfm: spectral flatness
+### mode: mode frequency
+### centroid: frequency centroid (see specprop)
+### peakf: peak frequency (frequency with highest energy)
+### meanfun: average of fundamental frequency measured across acoustic signal
+### minfun: minimum fundamental frequency measured across acoustic signal
+### maxfun: maximum fundamental frequency measured across acoustic signal
+### meandom: average of dominant frequency measured across acoustic signal
+### mindom: minimum of dominant frequency measured across acoustic signal
+### maxdom: maximum of dominant frequency measured across acoustic signal
+### dfrange: range of dominant frequency measured across acoustic signal
+### modindx: modulation index. Calculated as the accumulated absolute difference between adjacent measurements of fundamental frequencies divided by the frequency range
+### label: male or female
+
+
+## Downloading and installing our packages
+```{r}
+install.packages('dplyr')
+install.packages('tidyr')
+#Install the caret package that helps with various ML algorithms
+install.packages('caret')
+install.packages('kernlab')
+```
+
+## Importing libraries 
+```{r}
+
+library('dplyr')
+library('tidyverse')
+library('reshape2')
+library('caret')
+```
+
+## Getting our dataset in our ennvironment 
+```{r}
+#read the file
+voice <- read.csv('voice.csv')
+```
+
+```{r}
+#lets have an overview of the first top rows
+head(voice)
+```
+
+
+```{r}
+# Then check the summary of our data by using the summary() function
+# ---
+# 
+summary(voice)
+```
+```{r}
+# we have equal number of female and male in our dataset
+table(voice$label)
+```
+
+```{r}
+#We will have a look at our columns
+str(voice)
+```
+
+```{r}
+#Our target column is categorical hence we will factorize label
+voice$label <- as.factor(voice$label)
+```
+
+
+```{r}
+#Lets check for missing values and we find there are no missing values 
+sum(is.na.data.frame(voice))
+```
+
+```{r}
+#Correlation Matrix
+correlation <- cor(voice[, unlist(lapply(voice, is.numeric))])
+correlation
+```
+### we can see that Centroid, Median and Standard Deviation has maximum correlation with other columns
+
+
+```{r}
+# a bar graph showing the count of both male and female, they are equal
+ggplot(data = voice) +
+  geom_bar(mapping = aes(x=label))
+```
+
+```{r}
+max_centroid_by_gender <- voice %>%
+  select(label, centroid) %>%
+  group_by(label) %>%
+  
+  summarize(max_centroid = max(centroid))
+```
+
+
+```{r}
+head(max_centroid_by_gender)
+```
+
+
+```{r}
+ggplot(data = voice) +
+  geom_histogram(mapping = aes(x=modindx, fill= label), boundary=0)
+```
+## From the above diagram, we can see that maximum female voice lies in the range of 0.07 to 0.2 for Modulation Index
+
+```{r}
+ggplot(data=voice) +
+  geom_point(mapping = aes(x=meanfreq, y=sd, color=label))
+```
+### From the above chart, we can see that the labels are clearly divided into 2 groups. Females have standard deviation in the range of 0.02 to 0.06 and Male in the range of 0.05 to 0.08
+
+
+```{r}
+# ML algorithms work well with numbers so we change female to 0 and male to 1
+voice$label = factor(voice$label, levels = c('female','male'),
+                     labels = c(0,1))
+head(voice)
+```
+
+
+```{r}
+set.seed(3033)
+intrain <- createDataPartition(y = voice$label, p=0.7, list = FALSE)
+training <- voice[intrain,]
+testing <- voice[-intrain,]
+```
+### The set.seed() method is used to make our work replicable
+### The caret package provides a method createDataPartition() for partitioning our data into train and test set
+
+```{r}
+#For checking the dimensions of our training data frame and testing data frame, we can use these.
+dim(training);
+dim(testing);
+```
+### training data has 2218 rows and 21 columns
+### testing data has 950 rows and 21 columns
+
+```{r}
+trctrl <- trainControl(method = 'repeatedcv', number = 5, repeats = 3)
+set.seed(3233)
+
+svm_Linear <- train(label ~., data = training, method = 'svmLinear',
+                    trControl=trctrl,
+                    preProcess = c('center','scale'),
+                    tuneLength = 10)
+```
+### Before we train our model we will need to control all the computational overheads. 
+### We will implement this through the trainControl() method. 
+### This will allow us to use the train() function provided by the caret package. 
+### ---
+### The trainControl method will take three parameters:
+### a) The “method” parameter defines the resampling method, 
+### in this demo we’ll be using the repeatedcv or the repeated cross-validation method.
+### b) The next parameter is the “number”, this basically holds the number of resampling iterations.
+### c) The “repeats ” parameter contains the sets to compute for our repeated cross-validation. 
+### We are using setting number =5
+### ---
+
+
+```{r}
+# We can then check the result of our train() model as shown below
+svm_Linear
+```
+### The train model perfomed really well with an accuracy of 97.5%
+
+```{r}
+# We can use the predict() method for predicting results as shown below. 
+# We pass 2 arguements, our trained model and our testing data frame.
+# ---
+# 
+test_pred <- predict(svm_Linear, newdata = testing)
+test_pred
+```
+
+```{r}
+# Now checking for our accuracy of our model by using a confusion matrix 
+# ---
+confusionMatrix(table(test_pred, testing$label))
+```
+### Using confusion matrix, we can print statistics of our results. It shows that our model accuracy for test set is 96.7%
